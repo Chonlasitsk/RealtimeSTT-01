@@ -662,7 +662,7 @@ class AudioToTextRecorder:
         self.realtime_thread = threading.Thread(target=self._realtime_worker)
         self.realtime_thread.daemon = True
         self.realtime_thread.start()
-                   
+        self.wait_transcibe_event = threading.Event()
         # Wait for transcription models to start
         logging.debug('Waiting for main transcription model to start')
         self.main_transcription_ready_event.wait()
