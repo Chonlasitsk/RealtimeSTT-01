@@ -1210,11 +1210,11 @@ class AudioToTextRecorder:
         if self.use_microphone.value:
             self.reader_process.join(timeout=10)
 
-        if self.reader_process.is_alive():
-            logging.warning("Reader process did not terminate "
-                            "in time. Terminating forcefully."
-                            )
-            self.reader_process.terminate()
+            if self.reader_process.is_alive():
+                logging.warning("Reader process did not terminate "
+                                "in time. Terminating forcefully."
+                                )
+                self.reader_process.terminate()
 
         logging.debug('Terminating transcription process')
         self.transcript_process.join(timeout=10)
