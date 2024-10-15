@@ -1207,7 +1207,7 @@ class AudioToTextRecorder:
         logging.debug('Terminating reader process')
 
         # Give it some time to finish the loop and cleanup.
-        if self.use_microphone:
+        if self.use_microphone.value:
             self.reader_process.join(timeout=10)
 
         if self.reader_process.is_alive():
