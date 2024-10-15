@@ -15,7 +15,7 @@ setuptools.setup(
     description="A fast Voice Activity Detection and Transcription System",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/KoljaB/RealTimeSTT",
+    url="https://github.com/Chonlasitsk/RealTimeSTT-01",
     packages=setuptools.find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
