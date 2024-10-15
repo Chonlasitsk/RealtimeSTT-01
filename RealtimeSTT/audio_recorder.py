@@ -648,7 +648,7 @@ class AudioToTextRecorder:
                        self.pre_recording_buffer_duration)
         )
         self.frames = []
-
+        self.frames_realtimes = []
         # Recording control flags
         self.is_recording = False
         self.is_running = True
