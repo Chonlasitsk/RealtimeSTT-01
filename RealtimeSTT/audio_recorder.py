@@ -472,9 +472,6 @@ class AudioToTextRecorder:
             args=(
                 child_transcription_pipe,
                 model,
-                self.compute_type,
-                self.gpu_device_index,
-                self.device,
                 self.main_transcription_ready_event,
                 self.shutdown_event,
                 self.interrupt_stop_event,
@@ -649,6 +646,7 @@ class AudioToTextRecorder:
         )
         self.frames = []
         self.frames_realtimes = []
+        self.last_audio = False
         # Recording control flags
         self.is_recording = False
         self.is_running = True
@@ -698,9 +696,6 @@ class AudioToTextRecorder:
     @staticmethod
     def _transcription_worker(conn,
                               model_path,
-                              compute_type,
-                              gpu_device_index,
-                              device,
                               ready_event,
                               shutdown_event,
                               interrupt_stop_event,
@@ -750,13 +745,7 @@ class AudioToTextRecorder:
                      )
 
         try:
-            model = faster_whisper.WhisperModel(
-                model_size_or_path=model_path,
-                device=device,
-                compute_type=compute_type,
-                device_index=gpu_device_index,
-            )
-
+           model = AudioToTextRecorder.asr_model
         except Exception as e:
             logging.exception("Error initializing main "
                               f"faster_whisper transcription model: {e}"
@@ -1102,6 +1091,7 @@ class AudioToTextRecorder:
         self.wakeword_detected = False
         self.wake_word_detect_time = 0
         self.frames = []
+        self.frames_realtimes = []
         self.is_recording = True
         self.recording_start_time = time.time()
         self.is_silero_speech_active = False
@@ -1142,12 +1132,17 @@ class AudioToTextRecorder:
 
         return self
 
-    def feed_audio(self, chunk, original_sample_rate=16000):
+    def feed_audio(self, chunk, original_sample_rate=16000, trigger_shutdown=False):
         """
         Feed an audio chunk into the processing pipeline. Chunks are
         accumulated until the buffer size is reached, and then the accumulated
         data is fed into the audio_queue.
         """
+        self.is_recording = True
+        if trigger_shutdown:
+            self.last_audio = True
+            self.wait_transcibe_event.wait()
+            self.shutdown()
         # Check if the buffer attribute exists, if not, initialize it
         if not hasattr(self, 'buffer'):
             self.buffer = bytearray()
@@ -1206,6 +1201,7 @@ class AudioToTextRecorder:
 
         logging.debug('Finishing recording thread')
         if self.recording_thread:
+            self.audio_queue.put(bytes(1))
             self.recording_thread.join()
 
         logging.debug('Terminating reader process')
@@ -1240,6 +1236,7 @@ class AudioToTextRecorder:
                 del self.realtime_model_type
                 self.realtime_model_type = None
         gc.collect()
+        self.end_of_process(self.ws_conn)
 
     def _recording_worker(self):
         """
@@ -1369,6 +1366,7 @@ class AudioToTextRecorder:
                                 # Add the buffered audio
                                 # to the recording frames
                                 self.frames.extend(list(self.audio_buffer))
+                                self.frames_realtimes.extend(list(self.audio_buffer)) 
                                 self.audio_buffer.clear()
 
                             self.silero_vad_model.reset_states()
@@ -1424,6 +1422,7 @@ class AudioToTextRecorder:
 
                 if self.is_recording:
                     self.frames.append(data)
+                    self.frames_realtimes.append(data)
 
                 if not self.is_recording or self.speech_end_silence_start:
                     self.audio_buffer.append(data)
@@ -1456,16 +1455,17 @@ class AudioToTextRecorder:
             while self.is_running:
 
                 # Check if the recording is active
-                if self.is_recording:
+                if self.is_recording and len(self.frames_realtimes) > 260:
 
                     # Sleep for the duration of the transcription resolution
                     time.sleep(self.realtime_processing_pause)
 
                     # Convert the buffer frames to a NumPy array
                     audio_array = np.frombuffer(
-                        b''.join(self.frames),
+                        b''.join(self.frames_realtimes[:256]),
                         dtype=np.int16
                         )
+                    self.frames_realtimes = self.frames_realtimes[254:]
 
                     # Normalize the array to a [-1, 1] range
                     audio_array = audio_array.astype(np.float32) / \
@@ -1589,6 +1589,8 @@ class AudioToTextRecorder:
 
                 # If not recording, sleep briefly before checking again
                 else:
+                    if self.last_audio:
+                        self.wait_transcibe_event.set()
                     time.sleep(TIME_SLEEP)
 
         except Exception as e:
@@ -1871,7 +1873,7 @@ class AudioToTextRecorder:
         """
         if self.on_realtime_transcription_update:
             if self.is_recording:
-                self.on_realtime_transcription_update(text)
+                self.on_realtime_transcription_update(self.ws_conn, text)
 
     def __enter__(self):
         """
